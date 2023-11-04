@@ -44,7 +44,7 @@ enum Defaults{
 };
 // types/constants end
 
-enum modes { XSOCKET_TCP, XSOCKET_UDP };
+enum modes { tcp, udp };
 
 enum errors {
   Creation,
@@ -78,26 +78,26 @@ public:
 
 class Session {
 public:
-  Socket socket;
+  Socket session_fd;
 
 public:
 	Session() = default;
-  Session(const Socket &socket) : socket(socket) {}
+  Session(const Socket &socket) : session_fd(socket) {}
   ~Session() {
 #ifdef WIN32
     closesocket(socket);
 #else
-    close(socket);
+    close(session_fd);
 #endif
   }
 
   int read(char *buf, size_t size) noexcept(false) {
 		fd_set readfds;
     FD_ZERO(&readfds);
-    FD_SET(socket, &readfds);
+    FD_SET(session_fd, &readfds);
 		// wait for data available
-		select(socket+1, &readfds, nullptr, nullptr, nullptr);
-    int revSize = ::recv(socket, buf, size, 0);
+		select(session_fd+1, &readfds, nullptr, nullptr, nullptr);
+    int revSize = ::recv(session_fd, buf, size, 0);
     // if (!((revSize > 0) || ((revSize == -1) && (socket == EWOULDBLOCK))))
 		if (revSize == 0)
       throw Exception(errors::Interruption);
@@ -111,9 +111,9 @@ public:
     string str;
     fd_set fds;
 		FD_ZERO(&fds);
-		FD_SET(socket, &fds);
-		while(select(socket+1, &fds, nullptr, nullptr, &timeout) > 0){
-			int revSize = ::recv(socket, buf, maxReadSize(str.length()), 0);
+		FD_SET(session_fd, &fds);
+		while(select(session_fd+1, &fds, nullptr, nullptr, &timeout) > 0){
+			int revSize = ::recv(session_fd, buf, maxReadSize(str.length()), 0);
 			if (revSize == 0)
 				throw Exception(errors::Interruption);
 			buf[revSize] = 0x00;
@@ -134,7 +134,7 @@ public:
 	// TODO: readUntil
 
 	void write(const char *buf, size_t size) noexcept(false) {
-		if (::send(socket, buf, size, 0) == -1)
+		if (::send(session_fd, buf, size, 0) == -1)
 			throw Exception(errors::Interruption);
 	}
 
@@ -146,10 +146,10 @@ public:
 
 class SimpleServer {
 private:
-  Socket socket;
+  Socket server_fd;
 
 public:
-  SimpleServer(const int &port, const modes &mode = XSOCKET_TCP) noexcept(false) {
+  SimpleServer(const int &port, const modes &mode = tcp) noexcept(false) {
     sockaddr_in sin;
     sin.sin_family = AF_INET;
     sin.sin_port = htons(port);
@@ -158,12 +158,14 @@ public:
 #else
     sin.sin_addr.s_addr = INADDR_ANY;
 #endif
-    socket = ::socket(AF_INET, SOCK_STREAM, mode);
-    if (socket == INVALID_SOCKET)
+		int opt = 1;
+    server_fd = ::socket(AF_INET, SOCK_STREAM, mode);
+		setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (server_fd == INVALID_SOCKET)
       throw Exception(errors::Creation);
-    if (bind(socket, (LPSockAddr)&sin, sizeof(sin)) == SOCKET_ERROR)
+    if (::bind(server_fd, (LPSockAddr)&sin, sizeof(sin)) == SOCKET_ERROR)
       throw Exception(errors::Bind);
-    if (::listen(socket, 5) == SOCKET_ERROR)
+    if (::listen(server_fd, 5) == SOCKET_ERROR)
       throw Exception(errors::Listen);
   }
 
@@ -171,14 +173,14 @@ public:
 #ifdef WIN32
     closesocket(socket);
 #else
-    close(socket);
+    close(server_fd);
 #endif
   }
 
   Session accept() noexcept(false) {
     sockaddr_in remoteAddr;
     socklen_t len = sizeof(remoteAddr);
-    Socket client = ::accept(socket, (LPSockAddr)&remoteAddr, &len);
+    Socket client = ::accept(server_fd, (LPSockAddr)&remoteAddr, &len);
     if (client == INVALID_SOCKET)
       throw Exception(errors::Acceptation);
     return client;
@@ -224,7 +226,7 @@ public:
 
   SimpleServer createServer(int port) { return SimpleServer(port); }
 
-  Session connect(const char *host, int port, const modes &mode = XSOCKET_TCP) {
+  Session connect(const char *host, int port, const modes &mode = tcp) {
     // judge is host is ip
     auto s_addr = inet_addr(host);
     if (s_addr == INADDR_NONE)
@@ -241,9 +243,9 @@ public:
 #endif
 
     Session session = ::socket(AF_INET, SOCK_STREAM, mode);
-    if (session.socket == INVALID_SOCKET)
+    if (session.session_fd == INVALID_SOCKET)
       throw Exception(errors::Creation);
-    if (::connect(session.socket, (LPSockAddr)&sin, sizeof(sin)) ==
+    if (::connect(session.session_fd, (LPSockAddr)&sin, sizeof(sin)) ==
         SOCKET_ERROR)
       throw Exception(errors::Connection);
     return session;
