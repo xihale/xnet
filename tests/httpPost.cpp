@@ -1,5 +1,5 @@
 #include <iostream>
-#include "./lib/xsocket.hpp"
+#include "../lib/xsocket.hpp"
 
 using namespace std;
 
