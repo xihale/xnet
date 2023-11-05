@@ -5,9 +5,9 @@ using namespace std;
 
 const string msg="Hello Echo!";
 
-int main()try{
+int main(){
 
-  auto session = xihale::simpleSocket.connect("localhost", 6093);
+  auto session = xihale::socket::Session("localhost", 6093);
 
   char buf[2049];
   session.write(msg);
@@ -15,7 +15,4 @@ int main()try{
   cout<<buf<<'\n';
 
   return 0;
-}catch(const xihale::Exception &e){
-  cerr << e.what() << endl;
-  return 1;
 }
