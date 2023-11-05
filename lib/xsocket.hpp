@@ -2,46 +2,34 @@
 
 // headers start
 
-#include <bits/types/struct_timeval.h>
 #include <cstddef>
 #include <forward_list>
 #include <functional>
 #include <string>
-#include <sys/select.h>
 
-#ifdef WIN32
-#include <winsock2.h>
-#else
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#endif
+
+#include <sys/epoll.h>
 
 // headers end
 
 namespace xihale {
+namespace socket{
 
 using std::forward_list, std::string;
 
 // types/constants start
-#ifdef WIN32
-typedef int socklen_t;
-typedef SOCKET Socket;
-typedef LPSOCKADDR LPSockAddr;
-typedef SOCKADDR SockAddr;
-#else
 typedef int Socket;
 typedef sockaddr *LPSockAddr;
 typedef sockaddr SockAddr;
 static constexpr socklen_t INVALID_SOCKET = -1, SOCKET_ERROR = -1;
-#endif
 
-enum Defaults{
-	blockSize=4096
-};
+enum Defaults { blockSize = 4096 };
 // types/constants end
 
 enum modes { tcp, udp };
@@ -50,10 +38,12 @@ enum errors {
   Creation,
   Bind,
   Listen,
-  Connection,
-  Interruption,
-  Acceptation,
+  Connect,
+  Interrupt,
+  Accept,
   Domain,
+  EpollCreate,
+  EpollCtl,
 };
 
 // TODO: finish the class
@@ -65,145 +55,31 @@ public:
   Exception(errors e) : error(e) {}
   const char *what() const noexcept {
     switch (error) {
-    case Creation: return "Create socket error.";
-		case Bind: return "Bind error.";
-		case Listen: return "Listen error.";
-		case Connection: return "Connection error.";
-		case Interruption: return "Socket interrupted.";
-		case Acceptation: return "Acceptation error.";
-		case Domain: return "Failed to get ip from domain.";
+    case Creation:
+      return "Create socket error.";
+    case Bind:
+      return "Bind error.";
+    case Listen:
+      return "Listen error.";
+    case Connect:
+      return "Connection error.";
+    case Interrupt:
+      return "Socket interrupted.";
+    case Accept:
+      return "Acceptation error.";
+    case Domain:
+      return "Failed to get ip from domain.";
+    case EpollCreate:
+      return "Failed to create epoll.";
+    case EpollCtl:
+      return "Failed to add socket to epoll.";
     }
   }
 };
 
-class Session {
+class Utils {
 public:
-  Socket session_fd;
-
-public:
-	Session() = default;
-  Session(const Socket &socket) : session_fd(socket) {}
-  ~Session() {
-#ifdef WIN32
-    closesocket(socket);
-#else
-    close(session_fd);
-#endif
-  }
-
-  int read(char *buf, size_t size) noexcept(false) {
-		fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(session_fd, &readfds);
-		// wait for data available
-		select(session_fd+1, &readfds, nullptr, nullptr, nullptr);
-    int revSize = ::recv(session_fd, buf, size, 0);
-    // if (!((revSize > 0) || ((revSize == -1) && (socket == EWOULDBLOCK))))
-		if (revSize == 0)
-      throw Exception(errors::Interruption);
-    buf[revSize] = 0x00;
-    return revSize;
-  }
-
-	string __read(std::function<const size_t(const size_t&)>maxReadSize, size_t block = Defaults::blockSize, timeval timeout={3,0}) noexcept(false) {
-		char buf[block+1];
-    size_t revSize;
-    string str;
-    fd_set fds;
-		FD_ZERO(&fds);
-		FD_SET(session_fd, &fds);
-		while(select(session_fd+1, &fds, nullptr, nullptr, &timeout) > 0){
-			int revSize = ::recv(session_fd, buf, maxReadSize(str.length()), 0);
-			if (revSize == 0)
-				throw Exception(errors::Interruption);
-			buf[revSize] = 0x00;
-			str += buf;
-		}
-		return str;
-	}
-
-  string read(size_t size, size_t block = Defaults::blockSize, timeval timeout={3,0}) noexcept(false) {
-    return __read([&size](const size_t &len){return size-len;}, block, timeout);
-  }
-
-	string readAll(size_t block = Defaults::blockSize, timeval timeout={3,0}) noexcept(false) {
-		return __read([&block](const size_t&){return block;}, block, timeout);
-	}
-
-	// TODO: Base on Stream
-	// TODO: readUntil
-
-	void write(const char *buf, size_t size) noexcept(false) {
-		if (::send(session_fd, buf, size, 0) == -1)
-			throw Exception(errors::Interruption);
-	}
-
-	template<typename T> void write(const T &buf) noexcept(false) {
-		write(buf.c_str(), buf.length());
-	}
-
-};
-
-class SimpleServer {
-private:
-  Socket server_fd;
-
-public:
-  SimpleServer(const int &port, const modes &mode = tcp) noexcept(false) {
-    sockaddr_in sin;
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(port);
-#ifdef WIN32
-    sin.sin_addr.S_un.S_addr = INADDR_ANY;
-#else
-    sin.sin_addr.s_addr = INADDR_ANY;
-#endif
-		int opt = 1;
-    server_fd = ::socket(AF_INET, SOCK_STREAM, mode);
-		setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    if (server_fd == INVALID_SOCKET)
-      throw Exception(errors::Creation);
-    if (::bind(server_fd, (LPSockAddr)&sin, sizeof(sin)) == SOCKET_ERROR)
-      throw Exception(errors::Bind);
-    if (::listen(server_fd, 5) == SOCKET_ERROR)
-      throw Exception(errors::Listen);
-  }
-
-  ~SimpleServer() {
-#ifdef WIN32
-    closesocket(socket);
-#else
-    close(server_fd);
-#endif
-  }
-
-  Session accept() noexcept(false) {
-    sockaddr_in remoteAddr;
-    socklen_t len = sizeof(remoteAddr);
-    Socket client = ::accept(server_fd, (LPSockAddr)&remoteAddr, &len);
-    if (client == INVALID_SOCKET)
-      throw Exception(errors::Acceptation);
-    return client;
-  }
-};
-
-class SimpleSocket {
-public:
-  SimpleSocket() {
-#ifdef WIN32
-    WSADATA data;
-    if (WSAStartup(MAKEWORD(2, 2), &data) != 0)
-      throw "Cannot initialize winsock(WSAStartup)";
-#endif
-  }
-
-  ~SimpleSocket() {
-#ifdef WIN32
-    WSACleanup();
-#endif
-  }
-
-  forward_list<string> getHostByName(const char *name) {
+  static forward_list<string> getHostByName(const char *name) {
     struct hostent *host = gethostbyname(name);
     if (!host)
       throw Exception(errors::Domain);
@@ -213,43 +89,157 @@ public:
     return hosts;
   }
 
-  char *getFirstHostByName(const char *name) {
+  static char *getFirstHostByName(const char *name) {
     struct hostent *host = gethostbyname(name);
     if (!host)
       throw Exception(errors::Domain);
     return inet_ntoa(*(struct in_addr *)host->h_addr_list[0]);
   }
 
-  template <typename T> forward_list<string> getHostByName(const T &name) {
+  template <typename T>
+  static forward_list<string> getHostByName(const T &name) {
     return getHostByName(name.c_str());
   }
+};
 
-  SimpleServer createServer(int port) { return SimpleServer(port); }
+class Session {
+public:
+  Socket session_fd;
 
-  Session connect(const char *host, int port, const modes &mode = tcp) {
+public:
+  Session(): session_fd(INVALID_SOCKET) {};
+  Session(const Socket &socket) : session_fd(socket) {}
+  template<typename... Args> Session(Args... args) {connect(args...);}
+  ~Session() { close(); }
+
+  size_t read(char *buf, size_t size) noexcept(false) {
+    int epoll_fd;
+    struct epoll_event event;
+    epoll_fd = epoll_create1(0);
+    event.events = EPOLLIN;
+    event.data.fd = session_fd;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session_fd, &event);
+    epoll_wait(epoll_fd, &event, 1, -1);
+    size_t revSize = ::recv(session_fd, buf, size, 0);
+    if (revSize == 0)
+      throw Exception(errors::Interrupt);
+    buf[revSize] = 0x00;
+    ::close(epoll_fd);
+    return revSize;
+  }
+
+  string __read(std::function<const size_t(const size_t &)> maxReadSize,
+                size_t block = Defaults::blockSize,
+                size_t timeout_ms = 3000) noexcept(false) {
+    char buf[block + 1];
+    size_t revSize;
+    string res;
+    int epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1)
+      throw Exception(errors::EpollCreate);
+    struct epoll_event event;
+    event.events = EPOLLIN;
+    event.data.fd = session_fd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session_fd, &event) == -1)
+      throw Exception(errors::EpollCtl);
+
+    epoll_event events;
+    while (epoll_wait(epoll_fd, &events, 1, timeout_ms) > 0) {
+      if ((events.events & EPOLLIN) && events.data.fd == session_fd) {
+        revSize = ::recv(session_fd, buf, maxReadSize(res.length()), 0);
+        if (revSize == 0)
+          throw Exception(errors::Interrupt);
+        buf[revSize] = 0x00;
+        res += buf;
+      }
+    }
+    ::close(epoll_fd);
+    return res;
+  }
+
+  string read(size_t size, size_t block = Defaults::blockSize) noexcept(false) {
+    return __read([&size](const size_t &len) { return size - len; }, block);
+  }
+
+  string readAll(size_t block = Defaults::blockSize) noexcept(false) {
+    return __read([&block](const size_t &) { return block; }, block);
+  }
+
+  // TODO: Base on Stream
+  // TODO: readUntil
+
+  void write(const char *buf, size_t size) noexcept(false) {
+    if (::send(session_fd, buf, size, 0) == -1)
+      throw Exception(errors::Interrupt);
+  }
+
+  template <typename T> void write(const T &buf) noexcept(false) {
+    write(buf.c_str(), buf.length());
+  }
+
+  void connect(const char *host, size_t port, const modes &mode = tcp) {
+    if(session_fd != INVALID_SOCKET) close();
     // judge is host is ip
     auto s_addr = inet_addr(host);
     if (s_addr == INADDR_NONE)
-      return connect(getFirstHostByName(host), port, mode);
+      return connect(Utils::getFirstHostByName(host), port, mode);
 
     sockaddr_in sin;
     sin.sin_family = AF_INET;
     sin.sin_port = htons(port);
-
-#ifdef WIN32
-    sin.sin_addr.S_un.S_addr = s_addr;
-#else
     sin.sin_addr.s_addr = s_addr;
-#endif
 
-    Session session = ::socket(AF_INET, SOCK_STREAM, mode);
-    if (session.session_fd == INVALID_SOCKET)
+    session_fd = ::socket(AF_INET, SOCK_STREAM, mode);
+    if (session_fd == INVALID_SOCKET)
       throw Exception(errors::Creation);
-    if (::connect(session.session_fd, (LPSockAddr)&sin, sizeof(sin)) ==
+    if (::connect(session_fd, (LPSockAddr)&sin, sizeof(sin)) ==
         SOCKET_ERROR)
-      throw Exception(errors::Connection);
-    return session;
+      throw Exception(errors::Connect);
+  }
+
+  void connect(const string &host, size_t port, const modes &mode = tcp) {
+    connect(host.c_str(), port, mode);
+  }
+
+  void close() { ::close(session_fd); }
+};
+
+class SimpleServer {
+private:
+  Socket server_fd;
+
+public:
+  SimpleServer() = default;
+  SimpleServer(const int &port, const modes &mode = tcp) { bind(port, mode); }
+
+  void bind(const int &port, const modes &mode = tcp) noexcept(false) {
+    sockaddr_in sin;
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(port);
+    sin.sin_addr.s_addr = INADDR_ANY;
+
+    int opt = 1;
+    server_fd = ::socket(AF_INET, SOCK_STREAM, mode);
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (server_fd == INVALID_SOCKET)
+      throw Exception(errors::Creation);
+    if (::bind(server_fd, (LPSockAddr)&sin, sizeof(sin)) == SOCKET_ERROR)
+      throw Exception(errors::Bind);
+    if (::listen(server_fd, 5) == SOCKET_ERROR)
+      throw Exception(errors::Listen);
+  }
+
+  ~SimpleServer() { close(server_fd); }
+
+  Session accept() noexcept(false) {
+    sockaddr_in remoteAddr;
+    socklen_t len = sizeof(remoteAddr);
+    Socket client = ::accept(server_fd, (LPSockAddr)&remoteAddr, &len);
+    if (client == INVALID_SOCKET)
+      throw Exception(errors::Accept);
+    return client;
   }
 };
-static SimpleSocket simpleSocket;
+
+} // namespace socket
 } // namespace xihale
