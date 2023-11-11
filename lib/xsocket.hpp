@@ -130,7 +130,7 @@ public:
 
   string __read(std::function<const size_t(const size_t &)> maxReadSize,
                 size_t block = Defaults::blockSize,
-                size_t timeout_ms = 3000) noexcept(false) {
+                size_t timeout_ms = 120) noexcept(false) {
     char buf[block + 1];
     size_t revSize;
     string res;
