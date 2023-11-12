@@ -7,9 +7,13 @@
 
 ## Todo
 
-- [ ] 全面使用 `epoll` 进行 `recv` & `write`
+> Info: All is Simple Version
 
-## Future
+- [x] http `fetch` function
+- [x] uri parser(just deal with `scheme`, `host`, `port` and `path`)
+- [ ] websocket Session support
 
-- [ ] `https request`
-- [ ] `readUntil`
+## Long Term
+
+- [ ] http server
+- [ ] websocket server
