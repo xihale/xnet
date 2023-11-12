@@ -10,7 +10,7 @@ int main(){
   auto session=server.accept();
   char buf[2049];
   session.read(buf, 2048);
-  session.write(buf, 2048);
+  session.write(buf);
 
   return 0;
 }
