@@ -14,29 +14,16 @@ namespace xihale{
 namespace net{
 namespace uri{
 
-  enum errors{
-    InvalidUri,
-  };
-
-  class Exception: public std::exception{
-    // unimplemented
-  public:
-    errors error;
-    Exception(errors e) : error(e) {}
-
-    const char *what() const noexcept override {
-      switch (error) {
-      
-      }
-    }
-  };
-
   static const std::unordered_map<std::string_view, std::string_view> defaultPorts{
     {"http", "80"},
     {"https", "443"},
   };
 
-  struct uri{
+  struct uri;
+  static uri parse(std::string_view);
+
+  class uri{
+  public:
     using value_type = std::string_view;
     value_type scheme="http";
     value_type host;
@@ -45,12 +32,26 @@ namespace uri{
     value_type path="/"; // included query and fragment
     // std::string_view query="";
     // std::string_view fragment="";
+
+    uri() = default;
+    uri(const uri &) = default;
+    uri(uri &&) = default;
+    uri(value_type scheme, value_type host, std::uint16_t port, value_type path)
+            : scheme(scheme), host(host), port(port), path(path) {}
+    template<typename value_type>
+    uri(const value_type &__uri):uri(parse(__uri)){};
   };
 
   static uri parse(std::string_view __uri){
     const auto &npos=std::string_view::npos;
     
     uri res;
+
+    // trim space
+    auto pos=__uri.find_first_not_of(' ');
+    if(pos!=npos) __uri.remove_prefix(pos);
+    pos=__uri.find_last_not_of(' ');
+    if(pos!=npos) __uri.remove_suffix(__uri.length()-pos-1);
 
     auto scheme=__uri.find_first_of("://");
     auto path=__uri.find_first_of('/');
@@ -72,6 +73,7 @@ namespace uri{
 
     return res;
   }
+
 };
 };
 };

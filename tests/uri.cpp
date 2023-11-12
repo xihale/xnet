@@ -26,44 +26,52 @@ int main(){
   // complete
 
   judge("complete", uri::parse("https://example.com:443/path"), {
-      .scheme="https",
-      .host="example.com",
-      .port=443,
-      .path="/path"
+      "https",
+      "example.com",
+      443,
+      "/path"
+  });
+
+  // trim spaces
+  judge("trim spaces", uri::parse("    https://example.com:443/path    "), {
+      "https",
+      "example.com",
+      443,
+      "/path"
   });
 
   // omitted
 
   // scheme and port
   judge("scheme and port", uri::parse("example.com/path"), {
-      .scheme="http",
-      .host="example.com",
-      .port=80,
-      .path="/path"
+      "http",
+      "example.com",
+      80,
+      "/path"
   });
 
   // port
   judge("port", uri::parse("https://example.com/path"), {
-      .scheme="https",
-      .host="example.com",
-      .port=443,
-      .path="/path"
+      "https",
+      "example.com",
+      443,
+      "/path"
   });
 
   // path
   judge("path", uri::parse("https://example.com:443"), {
-      .scheme="https",
-      .host="example.com",
-      .port=443,
-      .path="/"
+      "https",
+      "example.com",
+      443,
+      "/"
   });
 
   // scheme, port and path
   judge("scheme, port and path", uri::parse("example.com"), {
-      .scheme="http",
-      .host="example.com",
-      .port=80,
-      .path="/"
+      "http",
+      "example.com",
+      80,
+      "/"
   });
 
   return 0;
