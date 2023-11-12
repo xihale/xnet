@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <forward_list>
 #include <functional>
+#include <optional>
 #include <string>
 
 #include <arpa/inet.h>
@@ -79,8 +80,8 @@ public:
 
 class Utils {
 public:
-  static forward_list<string> getHostByName(const char *name) {
-    struct hostent *host = gethostbyname(name);
+  static forward_list<string> getHostByName(const std::string_view &name) {
+    struct hostent *host = gethostbyname(name.data());
     if (!host)
       throw Exception(errors::Domain);
     forward_list<string> hosts;
@@ -90,7 +91,7 @@ public:
   }
 
   static char *getFirstHostByName(const char *name) {
-    struct hostent *host = gethostbyname(name);
+    struct hostent *host = gethostbyname(name); // TODO: slice to chars
     if (!host)
       throw Exception(errors::Domain);
     return inet_ntoa(*(struct in_addr *)host->h_addr_list[0]);
@@ -119,21 +120,17 @@ public:
     event.events = EPOLLIN;
     event.data.fd = session_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session_fd, &event);
-    epoll_wait(epoll_fd, &event, 1, -1);
+    auto readable = epoll_wait(epoll_fd, &event, 1, -1);
     size_t revSize = ::recv(session_fd, buf, size, 0);
-    if (revSize == 0)
-      throw Exception(errors::Interrupt);
-    buf[revSize] = 0x00;
+    if (revSize == 0) throw Exception(errors::Interrupt);
+    // buf[revSize] = 0x00; // No Ascii
     ::close(epoll_fd);
     return revSize;
   }
 
-  string __read(std::function<const size_t(const size_t &)> maxReadSize,
-                size_t block = Defaults::blockSize,
-                size_t timeout_ms = 120) noexcept(false) {
-    char buf[block + 1];
+  string __read(string &res, size_t timeout_ms = 400, size_t block = Defaults::blockSize) noexcept(false) {
+    char buf[block + 3];
     size_t revSize;
-    string res;
     int epoll_fd = epoll_create1(0);
     if (epoll_fd == -1)
       throw Exception(errors::EpollCreate);
@@ -146,35 +143,42 @@ public:
     epoll_event events;
     while (epoll_wait(epoll_fd, &events, 1, timeout_ms) > 0) {
       if ((events.events & EPOLLIN) && events.data.fd == session_fd) {
-        revSize = ::recv(session_fd, buf, maxReadSize(res.length()), 0);
+        revSize = ::recv(session_fd, buf, block, 0);
         if (revSize == 0)
           throw Exception(errors::Interrupt);
-        buf[revSize] = 0x00;
-        res += buf;
+        // buf[revSize] = 0x00; 
+        // No Ascii
+        res.append(buf, revSize);
       }
     }
     ::close(epoll_fd);
     return res;
   }
 
-  string read(size_t size, size_t block = Defaults::blockSize) noexcept(false) {
-    return __read([&size](const size_t &len) { return size - len; }, block);
+  string read(size_t maxSize, size_t block = Defaults::blockSize) noexcept(false) {
+    string res;
+    return __read(res, 1, block);
   }
 
-  string readAll(size_t block = Defaults::blockSize) noexcept(false) {
-    return __read([&block](const size_t &) { return block; }, block);
+  typedef std::function<bool(string &, std::optional<size_t> &, size_t &, const size_t &)> judge_t;
+  string readAll(judge_t judge, size_t timeout_ms = 100, size_t block = Defaults::blockSize) noexcept(false) {
+    string res;
+    res.reserve(block);
+    size_t dataRecv, l;
+    std::optional<size_t>len;
+    do{
+      l=res.length();
+      __read(res,timeout_ms,block);
+    }while(!judge(res, len, dataRecv, res.length()-l));
+    return res;
   }
 
   // TODO: Base on Stream
   // TODO: readUntil
 
-  void write(const char *buf, size_t size) noexcept(false) {
-    if (::send(session_fd, buf, size, 0) == -1)
+  void write(const std::string_view &buf) noexcept(false) {
+    if (::send(session_fd, buf.data(), buf.length(), 0) == -1)
       throw Exception(errors::Interrupt);
-  }
-
-  template <typename T> void write(const T &buf) noexcept(false) {
-    write(buf.c_str(), buf.length());
   }
 
   void connect(const char *host, size_t port, const modes &mode = tcp) {
@@ -195,10 +199,6 @@ public:
     if (::connect(session_fd, (LPSockAddr)&sin, sizeof(sin)) ==
         SOCKET_ERROR)
       throw Exception(errors::Connect);
-  }
-
-  void connect(const string &host, size_t port, const modes &mode = tcp) {
-    connect(host.c_str(), port, mode);
   }
 
   void close() { ::close(session_fd); }
