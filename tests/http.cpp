@@ -1,4 +1,4 @@
-#include "../lib/xhttp.hpp"
+#include "http.hpp"
 #include <iostream>
 #include <string_view>
 #include <unordered_map>
@@ -7,7 +7,7 @@ using namespace std;
 
 int main() {
 
-  using xihale::http::json_t;
+  using xihale::http::umap;
 
   // cout << xihale::http::fetch("httpbin.org/get?bar=2", {"GET", {}, {}});
   // cout << xihale::http::fetch("httpbin.org/get?bar=2",

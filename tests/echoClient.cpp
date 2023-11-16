@@ -1,5 +1,7 @@
+#include <cstdio>
 #include <iostream>
-#include "../lib/xsocket.hpp"
+#include <unistd.h>
+#include "socket.hpp"
 
 using namespace std;
 
@@ -7,12 +9,23 @@ const string msg="Hello Echo!";
 
 int main(){
 
-  auto session = xihale::socket::Session("localhost", 6093);
+  xihale::socket::Session session ;
+
+  while(true){
+    try{
+      session.connect("localhost", 6093);
+    }catch(...){
+      continue;
+    }
+    break;
+  }
 
   char buf[2049];
   session.write(msg);
-  session.read(buf, 2048);
-  cout<<buf<<'\n';
+  auto revSize=session.read(buf, 2048);
+  // write(STDOUT_FILENO, buf, revSize);
+  cout.write(buf, revSize);
+  cout.put('\n');
 
   return 0;
 }

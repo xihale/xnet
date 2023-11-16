@@ -1,6 +1,6 @@
 #pragma once
 
-#include "xsocket.hpp"
+#include "socket.hpp"
 #include "uri.hpp"
 #include <algorithm>
 #include <cctype>
@@ -14,7 +14,7 @@
 namespace xihale {
 namespace http {
 
-typedef std::unordered_map<std::string_view, std::string_view> json_t;
+typedef std::unordered_map<std::string_view, std::string_view> umap;
 
 enum errors {
   UnsupportedScheme,
@@ -52,7 +52,7 @@ struct options{
 
 class Response{
 public:
-  std::variant<std::string, json_t> headers;
+  std::variant<std::string, umap> headers;
   std::string body;
 };
 

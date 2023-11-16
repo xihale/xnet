@@ -1,4 +1,4 @@
-#include "../lib/uri.hpp"
+#include "uri.hpp"
 #include <stdexcept>
 #include <sstream>
 #include <string_view>
