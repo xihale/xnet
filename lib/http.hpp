@@ -37,7 +37,8 @@ template<bool mode=0>
 struct dataVisitor{
   typedef std::string result_type;
   result_type operator()(const result_type &v) { return v; }
-  result_type operator()(const std::unordered_map<std::string_view, std::string_view> &v) { 
+  template<class T>
+  result_type operator()(const T &v) { 
     std::string raw;
     for (auto &it : v)
       raw += result_type(it.first) + (mode?": ":"=") + result_type(it.second) + (mode?"\r\n":"&");
@@ -47,13 +48,37 @@ struct dataVisitor{
 
 struct options{
   std::string_view method;
-  std::variant<std::string, std::unordered_map<std::string_view, std::string_view>> data, headers;
+  std::variant<std::string, umap> data,  headers;
 };
 
-class Response{
+class Response{ // TODO: ignore the case
 public:
-  std::variant<std::string, umap> headers;
+  std::string headers_raw;
   std::string body;
+  umap headers;
+
+private:
+  std::string_view trim(std::string_view s){
+    s.remove_prefix(std::min(s.find_first_not_of(' '), s.length()));
+    return s.substr(0, s.find_last_not_of(' ')+1);
+  }
+public:
+
+  void parse_headers() {
+    size_t pos=0;
+    std::string_view h=this->headers_raw;
+    const auto &npos=std::string_view::npos;
+    // there may be some space in each section
+    while((pos=h.find_first_of("\r\n"))!=npos){
+      std::string_view line=h.substr(0, pos);
+      h.remove_prefix(pos+2);
+      pos=line.find_first_of(':');
+      if(pos==npos) continue;
+      auto key=trim(line.substr(0, pos));
+      auto value=trim(line.substr(pos+1));
+      this->headers[key]=value;
+    }
+  }
 };
 
 static Response

@@ -9,14 +9,17 @@ int main() {
 
   using xihale::http::umap;
 
-  // cout << xihale::http::fetch("httpbin.org/get?bar=2", {"GET", {}, {}});
-  // cout << xihale::http::fetch("httpbin.org/get?bar=2",
-  //                             {"GET", json_t{{"foo", "1"}}, {}});
-  // cout<<xihale::http::fetch("httpbin.org/post", {"POST",
-  //  "foo=1&bar=2", 
-  //  json_t{
-  //   {"User-Agent", "xhttp"},
-  // }});
+  // cout<<xihale::http::fetch("httpbin.org/get?bar=2", {"GET", {}, {}}).body;
+  // cout<<xihale::http::fetch("httpbin.org/get?bar=2",
+  //                             {"GET", umap{{"foo", "1"}}, {}}).body;
+  auto res=xihale::http::fetch("httpbin.org/post", {"POST",
+   "foo=1&bar=2", 
+   umap{
+    {"User-Agent", "xhttp"},
+  }});
+  // cout<<res.body<<'\n';
+  res.parse_headers();
+  cout<<res.headers["content-type"]<<'\n';
 
   // cout<<xihale::http::fetch("http://music.163.com/api/song/enhance/player/url",
   // {"POST", "ids=[33894322]&br=320000", json_t{
